@@ -65,7 +65,7 @@ def create_competitor_influencer(account, posts, engagement_metrics):
     }
 
 L = instaloader.Instaloader()
-profile = instaloader.Profile.from_username(L.context, "hypebeast")
+profile = instaloader.Profile.from_username(L.context, "username")
 posts = profile.get_posts()
 
 # Process downloaded posts and create instances of data types
