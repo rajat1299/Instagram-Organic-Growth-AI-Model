@@ -1,0 +1,118 @@
+import instaloader
+import json
+instagram_data = {
+    "accounts": [],
+    "posts": [],
+    "hashtags": [],
+    "locations": [],
+    "audience_demographics": [],
+    "competitors_influencers": []
+}
+
+def create_account(username, account_type, bio, website, profile_picture_url, followers_count, following_count, created_at, is_verified):
+    return {
+        "username": username,
+        "account_type": account_type,
+        "bio": bio,
+        "website": website,
+        "profile_picture_url": profile_picture_url,
+        "followers_count": followers_count,
+        "following_count": following_count,
+        "created_at": created_at,
+        "is_verified": is_verified
+    }
+
+def create_post(url, post_type, caption, hashtags, mentions, location, likes_count, comments_count, posted_at, media_url):
+    return {
+        "url": url,
+        "post_type": post_type,
+        "caption": caption,
+        "hashtags": hashtags,
+        "mentions": mentions,
+        "location": location,
+        "likes_count": likes_count,
+        "comments_count": comments_count,
+        "posted_at": posted_at,
+        "media_url": media_url
+    }
+
+def create_hashtag(name, post_count, related_hashtags):
+    return {
+        "name": name,
+        "post_count": post_count,
+        "related_hashtags": related_hashtags,
+    }
+
+def create_location(name, latitude, longitude, post_count):
+    return {
+        "name": name,
+        "latitude": latitude,
+        "longitude": longitude,
+        "post_count": post_count
+    }
+
+def create_audience_demographics(age_distribution, gender_distribution, location_distribution):
+    return {
+        "age_distribution": age_distribution,
+        "gender_distribution": gender_distribution,
+        "location_distribution": location_distribution
+    }
+def create_competitor_influencer(account, posts, engagement_metrics):
+    return {
+        "account": account,
+        "posts": posts,
+        "engagement_metrics": engagement_metrics
+    }
+
+L = instaloader.Instaloader()
+profile = instaloader.Profile.from_username(L.context, "hypebeast")
+posts = profile.get_posts()
+
+# Process downloaded posts and create instances of data types
+for post in posts:
+    # Extract post details
+    url = post.url
+    post_type = post.typename
+    caption = post.caption
+    hashtags = post.caption_hashtags
+    mentions = post.caption_mentions
+    location = post.location
+    likes_count = post.likes
+    comments_count = post.comments
+    posted_at = post.date_utc
+    media_url = post.url
+
+    # Create a post object
+    post_obj = create_post(url, post_type, caption, hashtags, mentions, location, likes_count, comments_count, posted_at, media_url)
+
+    # Append the post object to the instagram_data["posts"] array
+    instagram_data["posts"].append(post_obj)
+
+    # Create hashtag objects
+    for hashtag in hashtags:
+        hashtag_obj = create_hashtag(hashtag, None, None)  # You can fetch post count and related hashtags if needed
+        instagram_data["hashtags"].append(hashtag_obj)
+
+    # Create location object
+    if location:
+        location_obj = create_location(location.name, location.lat, location.lng, None)  # You can fetch post count if needed
+        instagram_data["locations"].append(location_obj)
+
+# Create audience demographics object (example data)
+age_distribution = {"18-24": 0.3, "25-34": 0.4, "35-44": 0.2, "45+": 0.1}
+gender_distribution = {"male": 0.6, "female": 0.4}
+location_distribution = {"US": 0.7, "UK": 0.2, "CA": 0.1}
+audience_demographics_obj = create_audience_demographics(age_distribution, gender_distribution, location_distribution)
+instagram_data["audience_demographics"].append(audience_demographics_obj)
+
+# Create competitor/influencer object (example data)
+competitor_account = create_account("competitor_username", "business", "Competitor bio", "https://competitor.com", "https://competitor.com/profile.jpg", 5000, 1000, "2021-01-01T00:00:00Z", True)
+competitor_posts = [create_post("https://competitor.com/post1", "image", "Competitor post 1", ["#hashtag1"], ["@mention1"], None, 1000, 100, "2023-01-01T00:00:00Z", "https://competitor.com/post1.jpg")]
+engagement_metrics = {"average_likes": 1000, "average_comments": 100, "engagement_rate": 0.05}
+competitor_obj = create_competitor_influencer(competitor_account, competitor_posts, engagement_metrics)
+instagram_data["competitors_influencers"].append(competitor_obj)
+
+# Save the collected data as a JSON file
+with open("instagram_data.json", "w") as file:
+    json.dump(instagram_data, file, indent=2)
+
