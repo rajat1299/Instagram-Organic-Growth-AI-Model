@@ -1,118 +1,180 @@
-import instaloader
+from bs4 import BeautifulSoup
 import json
-instagram_data = {
-    "accounts": [],
-    "posts": [],
-    "hashtags": [],
-    "locations": [],
-    "audience_demographics": [],
-    "competitors_influencers": []
-}
+import os
+import requests
+import random
+import string
+import sys
+import time
 
-def create_account(username, account_type, bio, website, profile_picture_url, followers_count, following_count, created_at, is_verified):
-    return {
-        "username": username,
-        "account_type": account_type,
-        "bio": bio,
-        "website": website,
-        "profile_picture_url": profile_picture_url,
-        "followers_count": followers_count,
-        "following_count": following_count,
-        "created_at": created_at,
-        "is_verified": is_verified
-    }
+class InstagramOSINT:
+    def __init__(self, username):
+        self.username = username
+        self.useragents = [...]  # List of user agents
 
-def create_post(url, post_type, caption, hashtags, mentions, location, likes_count, comments_count, posted_at, media_url):
-    return {
-        "url": url,
-        "post_type": post_type,
-        "caption": caption,
-        "hashtags": hashtags,
-        "mentions": mentions,
-        "location": location,
-        "likes_count": likes_count,
-        "comments_count": comments_count,
-        "posted_at": posted_at,
-        "media_url": media_url
-    }
+        self.profile_data = {}
+        self.posts_data = []
+        self.hashtags_data = []
+        self.locations_data = []
+        self.audience_demographics = {}
+        self.competitors_influencers = []
 
-def create_hashtag(name, post_count, related_hashtags):
-    return {
-        "name": name,
-        "post_count": post_count,
-        "related_hashtags": related_hashtags,
-    }
+    def scrape_profile(self):
+        # Scrape profile data and store it in self.profile_data
+        url = f"https://www.instagram.com/{self.username}/?__a=1"
+        response = requests.get(url, headers={"User-Agent": random.choice(self.useragents)})
+        data = response.json()
+        self.profile_data = data["graphql"]["user"]
 
-def create_location(name, latitude, longitude, post_count):
-    return {
-        "name": name,
-        "latitude": latitude,
-        "longitude": longitude,
-        "post_count": post_count
-    }
+    def scrape_posts(self):
+        if self.profile_data['is_private']:
+            print("[*] Private profile, cannot scrape posts!")
+            return
 
-def create_audience_demographics(age_distribution, gender_distribution, location_distribution):
-    return {
-        "age_distribution": age_distribution,
-        "gender_distribution": gender_distribution,
-        "location_distribution": location_distribution
-    }
-def create_competitor_influencer(account, posts, engagement_metrics):
-    return {
-        "account": account,
-        "posts": posts,
-        "engagement_metrics": engagement_metrics
-    }
+        for post in self.profile_data['edge_owner_to_timeline_media']['edges']:
+            post_data = self.extract_post_data(post['node'])
+            self.posts_data.append(post_data)
 
-L = instaloader.Instaloader()
-profile = instaloader.Profile.from_username(L.context, "username")
-posts = profile.get_posts()
+            # Extract hashtags and locations
+            for hashtag in post_data['hashtags']:
+                self.hashtags_data.append(self.extract_hashtag_data(hashtag))
+            if post_data['location']:
+                self.locations_data.append(self.extract_location_data(post_data['location']))
 
-# Process downloaded posts and create instances of data types
-for post in posts:
-    # Extract post details
-    url = post.url
-    post_type = post.typename
-    caption = post.caption
-    hashtags = post.caption_hashtags
-    mentions = post.caption_mentions
-    location = post.location
-    likes_count = post.likes
-    comments_count = post.comments
-    posted_at = post.date_utc
-    media_url = post.url
+    def extract_post_data(self, post):
+        return {
+            "url": f"https://www.instagram.com/p/{post['shortcode']}/",
+            "post_type": post['__typename'],
+            "caption": post['edge_media_to_caption']['edges'][0]['node']['text'],
+            "hashtags": [tag.name for tag in post['tags']],
+            "mentions": [mention.username for mention in post['edge_media_to_tagged_user']['edges']],
+            "location": post['location'],
+            "likes_count": post['edge_liked_by']['count'],
+            "comments_count": post['edge_media_to_comment']['count'],
+            "posted_at": post['taken_at_timestamp'],
+            "media_url": post['display_url']
+        }
 
-    # Create a post object
-    post_obj = create_post(url, post_type, caption, hashtags, mentions, location, likes_count, comments_count, posted_at, media_url)
+    def extract_hashtag_data(self, hashtag):
+        url = f"https://www.instagram.com/explore/tags/{hashtag}/?__a=1"
+        response = requests.get(url, headers={"User-Agent": random.choice(self.useragents)})
+        data = response.json()
+        return {
+            "name": hashtag,
+            "post_count": data['graphql']['hashtag']['edge_hashtag_to_media']['count'],
+            "related_hashtags": [tag['name'] for tag in data['graphql']['hashtag']['edge_hashtag_to_related_tags']['edges']]
+        }
 
-    # Append the post object to the instagram_data["posts"] array
-    instagram_data["posts"].append(post_obj)
+    def extract_location_data(self, location):
+        url = f"https://www.instagram.com/explore/locations/{location['id']}/?__a=1"
+        response = requests.get(url, headers={"User-Agent": random.choice(self.useragents)})
+        data = response.json()
+        return {
+            "name": location['name'],
+            "latitude": location['lat'],
+            "longitude": location['lng'],
+            "post_count": data['graphql']['location']['edge_location_to_media']['count']
+        }
 
-    # Create hashtag objects
-    for hashtag in hashtags:
-        hashtag_obj = create_hashtag(hashtag, None, None)  # You can fetch post count and related hashtags if needed
-        instagram_data["hashtags"].append(hashtag_obj)
+    def extract_audience_demographics(self):
+        url = f"https://www.instagram.com/api/v1/users/{self.profile_data['id']}/info/"
+        response = requests.get(url, headers={"User-Agent": random.choice(self.useragents)})
+        data = response.json()
+        self.audience_demographics = {
+            "age_distribution": data['user']['age_range'],
+            "gender_distribution": data['user']['gender'],
+            "location_distribution": data['user']['public_country']
+        }
 
-    # Create location object
-    if location:
-        location_obj = create_location(location.name, location.lat, location.lng, None)  # You can fetch post count if needed
-        instagram_data["locations"].append(location_obj)
+    def extract_competitors_influencers(self):
+        competitors_url = f"https://www.instagram.com/graphql/query/?query_hash=your_competitors_query_hash&variables={{'user_id':'{self.profile_data['id']}'}}"
+        response = requests.get(competitors_url, headers={"User-Agent": random.choice(self.useragents)})
+        competitors_data = response.json()
 
-# Create audience demographics object (example data)
-age_distribution = {"18-24": 0.3, "25-34": 0.4, "35-44": 0.2, "45+": 0.1}
-gender_distribution = {"male": 0.6, "female": 0.4}
-location_distribution = {"US": 0.7, "UK": 0.2, "CA": 0.1}
-audience_demographics_obj = create_audience_demographics(age_distribution, gender_distribution, location_distribution)
-instagram_data["audience_demographics"].append(audience_demographics_obj)
+        influencers_url = f"https://www.instagram.com/graphql/query/?query_hash=your_influencers_query_hash&variables={{'user_id':'{self.profile_data['id']}'}}"
+        response = requests.get(influencers_url, headers={"User-Agent": random.choice(self.useragents)})
+        influencers_data = response.json()
 
-# Create competitor/influencer object (example data)
-competitor_account = create_account("competitor_username", "business", "Competitor bio", "https://competitor.com", "https://competitor.com/profile.jpg", 5000, 1000, "2021-01-01T00:00:00Z", True)
-competitor_posts = [create_post("https://competitor.com/post1", "image", "Competitor post 1", ["#hashtag1"], ["@mention1"], None, 1000, 100, "2023-01-01T00:00:00Z", "https://competitor.com/post1.jpg")]
-engagement_metrics = {"average_likes": 1000, "average_comments": 100, "engagement_rate": 0.05}
-competitor_obj = create_competitor_influencer(competitor_account, competitor_posts, engagement_metrics)
-instagram_data["competitors_influencers"].append(competitor_obj)
+        # Process competitors data
+        for competitor in competitors_data['data']['user']['edge_similar_accounts']['edges']:
+            competitor_account = self.extract_account_data(competitor['node'])
+            competitor_posts = self.extract_competitor_posts(competitor['node']['id'])
+            engagement_metrics = self.calculate_engagement_metrics(competitor_posts)
+            self.competitors_influencers.append({
+                "account": competitor_account,
+                "posts": competitor_posts,
+                "engagement_metrics": engagement_metrics
+            })
 
-# Save the collected data as a JSON file
-with open("instagram_data.json", "w") as file:
-    json.dump(instagram_data, file, indent=2)
+        # Process influencers data
+        for influencer in influencers_data['data']['user']['edge_related_profiles']['edges']:
+            influencer_account = self.extract_account_data(influencer['node'])
+            influencer_posts = self.extract_influencer_posts(influencer['node']['id'])
+            engagement_metrics = self.calculate_engagement_metrics(influencer_posts)
+            self.competitors_influencers.append({
+                "account": influencer_account,
+                "posts": influencer_posts,
+                "engagement_metrics": engagement_metrics
+            })
 
+    def extract_account_data(self, account):
+        return {
+            "username": account['username'],
+            "account_type": account['business_category_name'],
+            "bio": account['biography'],
+            "website": account['external_url'],
+            "profile_picture_url": account['profile_pic_url'],
+            "followers_count": account['edge_followed_by']['count'],
+            "following_count": account['edge_follow']['count'],
+            "created_at": None,
+            "is_verified": account['is_verified']
+        }
+
+    def extract_competitor_posts(self, user_id):
+        # Extract competitor posts data using the provided user_id
+        # Implement the logic based on the Instagram API or web scraping
+        return []
+
+    def extract_influencer_posts(self, user_id):
+        # Extract influencer posts data using the provided user_id
+        # Implement the logic based on the Instagram API or web scraping
+        return []
+
+    def calculate_engagement_metrics(self, posts):
+        total_likes = sum(post['likes_count'] for post in posts)
+        total_comments = sum(post['comments_count'] for post in posts)
+        engagement_rate = (total_likes + total_comments) / len(posts)
+        return {
+            "average_likes": total_likes / len(posts),
+            "average_comments": total_comments / len(posts),
+            "engagement_rate": engagement_rate
+        }
+
+    def save_data(self):
+        data = {
+            "profile": self.profile_data,
+            "posts": self.posts_data,
+            "hashtags": self.hashtags_data,
+            "locations": self.locations_data,
+            "audience_demographics": self.audience_demographics,
+            "competitors_influencers": self.competitors_influencers
+        }
+        with open(f"{self.username}_data.json", "w") as file:
+            json.dump(data, file, indent=2)
+
+def main():
+    username = "example_username"
+    osint = InstagramOSINT(username)
+    
+    osint.scrape_profile()
+    osint.scrape_posts()
+    osint.extract_audience_demographics()
+    osint.extract_competitors_influencers()
+    
+    osint.save_data()
+
+if __name__ == "__main__":
+    main()
+        
+        
+    
