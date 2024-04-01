@@ -1,0 +1,92 @@
+import pandas as pd
+import pickle
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Load the preprocessed DataFrame
+df = pd.read_csv('preprocessed_data.csv')
+
+# Feature Engineering
+# Create new features based on identified potential features
+df['Posts_to_Followers_Ratio'] = df['Posts'] / df['Followers']
+df['Likes_to_Followers_Ratio'] = df['Avg__Likes'] / df['Followers']
+df['Engagement_Rate'] = df['Avg__Likes'] / df['Followers']
+
+# Prepare the features and target variable
+features = [
+    'Posts', 'Followers', 'Avg__Likes', 'Eng_Rate',
+    'Posts_to_Followers_Ratio', 'Likes_to_Followers_Ratio', 'Engagement_Rate',
+    'Category_Beauty_&_Makeup', 'Category_Craft/DIY', 'Category_Health,_Sports_&_Fitness',
+    'Category_Lifestyle', 'Category_News_&_Politics', 'Category_entertainment',
+    'Category_fashion', 'Category_food', 'Category_photography', 'Category_technology'
+]
+target = 'Engagement_Rate'
+
+X = df[features]
+y = df[target]
+
+# Scale the numerical features
+scaler = MinMaxScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Train the Random Forest model
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_scaled, y)
+
+# Perform cross-validation
+cv_scores_rf = cross_val_score(rf_model, X_scaled, y, cv=5, scoring='r2')
+print("Random Forest - Cross-validation R-squared scores:", cv_scores_rf)
+print("Random Forest - Mean R-squared score:", cv_scores_rf.mean())
+
+# Get feature importance scores
+importances = rf_model.feature_importances_
+feature_importances = pd.Series(importances, index=features).sort_values(ascending=False)
+print("Feature importances:")
+print(feature_importances)
+
+# Serialize the trained model
+with open('rf_model.pkl', 'wb') as file:
+    pickle.dump(rf_model, file)
+
+# Serialize the scaler object
+with open('scaler.pkl', 'wb') as file:
+    pickle.dump(scaler, file)
+
+print("Model and scaler have been serialized and saved.")
+
+# Load the serialized model and scaler
+with open('rf_model.pkl', 'rb') as file:
+    loaded_model = pickle.load(file)
+
+with open('scaler.pkl', 'rb') as file:
+    loaded_scaler = pickle.load(file)
+
+print("Model and scaler have been loaded.")
+
+# Example usage of the loaded model
+new_data = pd.DataFrame({
+    'Posts': [100],
+    'Followers': [5000],
+    'Avg__Likes': [500],
+    'Eng_Rate': [0.1],
+    'Posts_to_Followers_Ratio': [0.02],
+    'Likes_to_Followers_Ratio': [0.1],
+    'Engagement_Rate': [0.1],
+    'Category_Beauty_&_Makeup': [0],
+    'Category_Craft/DIY': [0],
+    'Category_Health,_Sports_&_Fitness': [1],
+    'Category_Lifestyle': [0],
+    'Category_News_&_Politics': [0],
+    'Category_entertainment': [0],
+    'Category_fashion': [0],
+    'Category_food': [0],
+    'Category_photography': [0],
+    'Category_technology': [0]
+})
+
+new_data_scaled = loaded_scaler.transform(new_data)
+prediction = loaded_model.predict(new_data_scaled)
+print("Predicted Engagement Rate:", prediction)
